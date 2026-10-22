@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
 
-namespace IssueTracker.Api.Common.Middleware;
+namespace IssueTracker.Api.Middleware;
 
 /// <summary>
 /// Centralized exception handling middleware that logs errors and returns RFC 7807 problem details.
@@ -43,14 +43,25 @@ public class GlobalExceptionHandlerMiddleware
 
         context.Response.Clear();
         context.Response.ContentType = "application/problem+json";
-        context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+
+        var statusCode = exception switch
+        {
+            BadHttpRequestException badHttpEx => badHttpEx.StatusCode,
+            _ => (int)HttpStatusCode.InternalServerError
+        };
+
+        context.Response.StatusCode = statusCode;
 
         var problemDetails = new
         {
-            type = "https://tools.ietf.org/html/rfc9110#section-15.6.1",
-            title = "Internal Server Error",
-            status = (int)HttpStatusCode.InternalServerError,
-            detail = "An unexpected error occurred while processing your request. Please reference the request ID when reporting this issue.",
+            type = statusCode == 400 
+                ? "https://tools.ietf.org/html/rfc9110#section-15.5.1"
+                : "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+            title = statusCode == 400 ? "Bad Request" : "Internal Server Error",
+            status = statusCode,
+            detail = statusCode == 400
+                ? exception.Message
+                : "An unexpected error occurred while processing your request. Please reference the request ID when reporting this issue.",
             instance = context.Request.Path.Value,
             requestId = requestId
         };

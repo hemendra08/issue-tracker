@@ -2,6 +2,9 @@
 
 A modern, production-ready Issue Tracking platform built with ASP.NET Core, PostgreSQL, and Entity Framework Core following a **Feature-Wise Architecture** (Modular Vertical Slice).
 
+> [!NOTE]
+> For the comprehensive master architecture guide, Mermaid diagrams, complete API contracts, and upcoming roadmap, see **[PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md)**.
+
 ---
 
 ## 1. Project Architecture
@@ -13,11 +16,10 @@ backend/
 ├── src/
 │   └── IssueTracker.Api/
 │       ├── Features/
-│       │   ├── Identity/      # Milestone 2: Auth, Users, Roles, JWT Tokens
-│       │   ├── Projects/      # Milestone 3: Projects, Workspaces, Teams
-│       │   └── Issues/        # Milestone 4: Tickets, Workflow, Comments
+│       │   ├── Auth/          # Auth, Users, Roles, JWT Tokens
+│       │   └── Projects/      # Projects, Workspaces, Teams
 │       ├── Data/              # Entity Framework Core DbContext (dit_db)
-│       ├── Common/            # Middleware (Correlation ID, Global Error Handling)
+│       ├── Middleware/        # Pipeline filters (Correlation ID, Global Error Handling)
 │       ├── Program.cs         # App entry point & endpoint registration
 │       └── appsettings.json   # PostgreSQL configuration
 └── tests/
@@ -72,12 +74,3 @@ The API starts on **`http://localhost:5000`**.
 
 ### Interactive Documentation (Scalar UI)
 - Open [http://localhost:5000/scalar/v1](http://localhost:5000/scalar/v1) for interactive API testing.
-
-### Health Probes
-- **Liveness**: `GET http://localhost:5000/health/live` &rarr; `{"status":"Healthy"}`
-- **Readiness (Database check)**: `GET http://localhost:5000/health/ready` &rarr; `{"status":"Healthy"}`
-
-### Feature Pings
-- **Identity**: `GET http://localhost:5000/api/v1/identity/health/ping`
-- **Projects**: `GET http://localhost:5000/api/v1/projects/health/ping`
-- **Issues**: `GET http://localhost:5000/api/v1/issues/health/ping`

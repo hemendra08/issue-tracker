@@ -1,4 +1,4 @@
-namespace IssueTracker.Api.Common.Middleware;
+namespace IssueTracker.Api.Middleware;
 
 /// <summary>
 /// Extracts or generates a Request ID (correlation ID), propagates it to response headers,

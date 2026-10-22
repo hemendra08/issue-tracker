@@ -17,14 +17,14 @@ Instead of distributed microservice network overhead, features are organized int
                     +------------------+-------------------+
                                        |
                    +-------------------+-------------------+
-                   |                   |                   |
-                   v                   v                   v
-          +-----------------+ +-----------------+ +-----------------+
-          | Features/       | | Features/       | | Features/       |
-          | Identity        | | Projects        | | Issues          |
-          | (Auth & Users)  | | (Projects/Teams)| | (Issues/Tasks)  |
-          +--------+--------+ +--------+--------+ +--------+--------+
-                   |                   |                   |
+                   |                                       |
+                   v                                       v
+          +-----------------+                     +-----------------+
+          | Features/       |                     | Features/       |
+          | Auth            |                     | Projects        |
+          | (Auth & Users)  |                     | (Projects/Teams)|
+          +--------+--------+                     +--------+--------+
+                   |                                       |
                    +-------------------+-------------------+
                                        |
                                        v
@@ -36,11 +36,10 @@ Instead of distributed microservice network overhead, features are organized int
 
 ### Feature Module Summary
 
-| Feature | Primary Responsibility | Milestone | Endpoints Prefix |
-| :--- | :--- | :--- | :--- |
-| **Identity** | Authentication, registration, password hashing, JWT tokens | Milestone 2 | `/api/v1/identity/*` |
-| **Projects** | Workspaces, project keys, team memberships | Milestone 3 | `/api/v1/projects/*` |
-| **Issues** | Issue tracking, statuses, priorities, assignments, comments | Milestone 4 | `/api/v1/issues/*` |
+| Feature | Primary Responsibility | Endpoints Prefix |
+| :--- | :--- | :--- |
+| **Auth** | Authentication, registration, password hashing, JWT tokens | `/api/v1/auth/*` (alias: `/api/v1/identity/*`) |
+| **Projects** | Workspaces, project keys, team memberships | `/api/v1/projects/*` |
 
 ---
 
@@ -48,5 +47,4 @@ Instead of distributed microservice network overhead, features are organized int
 
 - **Observability**: Correlation Request IDs are generated or extracted in `RequestIdMiddleware`, forwarded in headers (`X-Request-ID`), and captured across structured JSON log scopes.
 - **Error Shielding**: `GlobalExceptionHandlerMiddleware` returns standard RFC 7807 problem details upon unhandled exceptions.
-- **Health Checks**: `/health/live` (process health) and `/health/ready` (PostgreSQL connectivity).
 - **API Documentation**: Scalar UI at `/scalar/v1` generated via `Microsoft.AspNetCore.OpenApi`.

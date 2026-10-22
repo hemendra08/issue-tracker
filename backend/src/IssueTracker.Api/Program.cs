@@ -1,12 +1,15 @@
-using System.Text.Json;
-using IssueTracker.Api.Common.Middleware;
+using System.Text;
+using IssueTracker.Api.Middleware;
 using IssueTracker.Api.Data;
-using IssueTracker.Api.Features.Identity;
-using IssueTracker.Api.Features.Issues;
+using IssueTracker.Api.Features.Auth;
+using IssueTracker.Api.Features.Auth.Models;
+using IssueTracker.Api.Features.Auth.Services;
 using IssueTracker.Api.Features.Projects;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using IssueTracker.Api.Features.Projects.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,23 +32,91 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-// 3. Health Checks
-builder.Services.AddHealthChecks()
-    .AddDbContextCheck<AppDbContext>(
-        name: "dit_db",
-        failureStatus: HealthStatus.Unhealthy,
-        tags: ["ready", "db"]);
+// 3. Identity & JWT Authentication Services
+builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+builder.Services.AddScoped<IUserDirectoryService, UserDirectoryService>();
 
-// 4. OpenAPI & Scalar Interactive Documentation
+var jwtSection = builder.Configuration.GetSection("Jwt");
+var issuer = jwtSection["Issuer"] ?? "IssueTracker.Api";
+var audience = jwtSection["Audience"] ?? "IssueTracker.Client";
+var signingKey = builder.Configuration["Jwt:SigningKey"] 
+              ?? Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
+
+if (string.IsNullOrWhiteSpace(signingKey) || signingKey.Length < 32)
+{
+    throw new InvalidOperationException(
+        "Configuration error: Jwt:SigningKey is required and must be at least 32 characters long. " +
+        "Set it using 'dotnet user-secrets set \"Jwt:SigningKey\" \"<your-secret-key>\"' or the JWT_SIGNING_KEY environment variable.");
+}
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.RequireHttpsMetadata = false; // Local HTTP development supported
+        options.SaveToken = true;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = issuer,
+            ValidateAudience = true,
+            ValidAudience = audience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+            ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var jti = context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti)?.Value;
+                if (!string.IsNullOrEmpty(jti))
+                {
+                    var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                    var isRevoked = await db.RevokedTokens.AnyAsync(r => r.TokenId == jti);
+                    if (isRevoked)
+                    {
+                        context.Fail("Token has been revoked.");
+                    }
+                }
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+// 5. CORS for Frontend
+const string FrontendCorsPolicy = "FrontendCorsPolicy";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(FrontendCorsPolicy, policy =>
+    {
+        policy.WithOrigins(
+            builder.Configuration["Frontend:Url"] ?? "http://localhost:5173",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173"
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod();
+    });
+});
+
+// 6. OpenAPI & Scalar Interactive Documentation
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// 5. Middlewares
-app.UseMiddleware<RequestIdMiddleware>();
-app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+// 7. Middlewares
+app.UseRequestId();
+app.UseGlobalExceptionHandler();
 
-// 6. Interactive API Documentation (OpenAPI + Scalar)
+app.UseCors(FrontendCorsPolicy);
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// 7. Interactive API Documentation (OpenAPI + Scalar)
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -56,53 +127,11 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// 7. Liveness & Readiness Probes
-app.MapGet("/health/live", () => Results.Ok(new
-{
-    status = "Healthy",
-    service = "IssueTracker.Api",
-    timestamp = DateTime.UtcNow
-}))
-.WithTags("Health");
-
-app.MapHealthChecks("/health/ready", new HealthCheckOptions
-{
-    Predicate = check => check.Tags.Contains("ready"),
-    ResponseWriter = async (context, report) =>
-    {
-        context.Response.ContentType = "application/json";
-        var response = new
-        {
-            status = report.Status.ToString(),
-            service = "IssueTracker.Api",
-            timestamp = DateTime.UtcNow,
-            totalDurationMs = report.TotalDuration.TotalMilliseconds,
-            entries = report.Entries.Select(e => new
-            {
-                key = e.Key,
-                status = e.Value.Status.ToString(),
-                description = e.Value.Description,
-                durationMs = e.Value.Duration.TotalMilliseconds,
-                error = e.Value.Exception?.Message
-            })
-        };
-        var statusCode = report.Status == HealthStatus.Healthy ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable;
-        context.Response.StatusCode = statusCode;
-        await context.Response.WriteAsync(JsonSerializer.Serialize(response, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = false
-        }));
-    }
-})
-.WithTags("Health");
-
 // 8. Register Feature Endpoints
-app.MapIdentityEndpoints();
+app.MapAuthEndpoints();
 app.MapProjectEndpoints();
-app.MapIssueEndpoints();
 
-// 9. Startup Database Migration
+// 10. Startup Database Migration
 if (app.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
 {
     using var scope = app.Services.CreateScope();

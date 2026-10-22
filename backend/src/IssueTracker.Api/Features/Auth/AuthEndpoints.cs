@@ -1,23 +1,35 @@
-namespace IssueTracker.Api.Features.Identity;
+using IssueTracker.Api.Features.Auth.Endpoints;
 
-public static class IdentityEndpoints
+namespace IssueTracker.Api.Features.Auth;
+
+/// <summary>
+/// Entry point that maps all decoupled Auth endpoints.
+/// Each action (SignUp, Login, Logout, Profile, Users) is isolated in its own file.
+/// </summary>
+public static class AuthEndpoints
 {
-    public static IEndpointRouteBuilder MapIdentityEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/identity")
-            .WithTags("Identity & Auth");
+        // 1. Primary Auth group (/api/v1/auth)
+        var primaryGroup = app.MapGroup("/api/v1/auth").WithTags("Auth");
+        SignUpEndpoint.Map(primaryGroup, isPrimary: true);
+        LoginEndpoint.Map(primaryGroup, isPrimary: true);
+        LogoutEndpoint.Map(primaryGroup, isPrimary: true);
+        UserProfileEndpoint.Map(primaryGroup, isPrimary: true);
 
-        group.MapGet("/health/ping", () => Results.Ok(new
-        {
-            feature = "Identity",
-            status = "pong",
-            timestamp = DateTime.UtcNow
-        }))
-        .WithName("IdentityPing")
-        .WithSummary("Ping endpoint for Identity feature");
+        // 2. Backward-compatible alias group (/api/v1/identity)
+        var aliasGroup = app.MapGroup("/api/v1/identity").WithTags("Auth").ExcludeFromDescription();
+        SignUpEndpoint.Map(aliasGroup, isPrimary: false);
+        LoginEndpoint.Map(aliasGroup, isPrimary: false);
+        LogoutEndpoint.Map(aliasGroup, isPrimary: false);
+        UserProfileEndpoint.Map(aliasGroup, isPrimary: false);
 
-        // Milestone 2 endpoints (Register, Login, Refresh) will be added here!
+        // 3. Inter-service HTTP endpoints for other microservices (/api/v1/users)
+        InternalUsersEndpoint.Map(app);
 
         return app;
     }
+
+    [Obsolete("Use MapAuthEndpoints instead.")]
+    public static IEndpointRouteBuilder MapIdentityEndpoints(this IEndpointRouteBuilder app) => app.MapAuthEndpoints();
 }
